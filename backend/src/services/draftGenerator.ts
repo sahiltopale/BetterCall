@@ -47,7 +47,7 @@ export class DraftGenerator {
       const userPrompt = this.buildUserPrompt(request, context);
 
       const model = this.gemini.getGenerativeModel({ 
-        model: options.model || 'gemini-2.0-flash-exp',
+        model: options.model || 'gemini-2.5-flash',
         generationConfig: {
           temperature: options.temperature || 0.7,
           maxOutputTokens: options.maxTokens || 3000,
@@ -241,7 +241,7 @@ For legal notices specifically:
   ): Promise<string[]> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 500,
@@ -287,7 +287,7 @@ Format your response as numbered list.`;
   ): Promise<string> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.5,
           maxOutputTokens: 3000,
@@ -320,7 +320,7 @@ Please provide the refined draft.`;
   async extractSections(draft: string): Promise<Record<string, string>> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 2000,
@@ -351,7 +351,7 @@ ${draft}`;
   async compareDrafts(draft1: string, draft2: string): Promise<string> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 1500,

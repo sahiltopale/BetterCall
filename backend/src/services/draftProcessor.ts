@@ -55,7 +55,7 @@ export class DraftProcessor {
         console.log(`Creating Pinecone index: ${this.indexName}`);
         await this.pinecone.createIndex({
           name: this.indexName,
-          dimension: 768, // Gemini text-embedding-004 dimension
+          dimension: 3072, // gemini-embedding-001 dimension
           metric: 'cosine',
           spec: {
             serverless: {
@@ -154,7 +154,7 @@ export class DraftProcessor {
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const model = this.gemini.getGenerativeModel({ model: 'text-embedding-004' });
+      const model = this.gemini.getGenerativeModel({ model: 'gemini-embedding-001' }, { apiVersion: 'v1beta' });
       const result = await model.embedContent(text);
       return result.embedding.values;
     } catch (error) {

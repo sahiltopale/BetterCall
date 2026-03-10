@@ -576,10 +576,10 @@ export class IndiaKanoonService {
         doctype: 'judgment'
       });
 
-      return result.docs.filter(doc => 
-        doc.doctype.toLowerCase().includes('judgment') ||
-        doc.doctype.toLowerCase().includes('order')
-      );
+      return result.docs.filter(doc => {
+        const doctype = typeof doc.doctype === 'string' ? doc.doctype.toLowerCase() : '';
+        return doctype.includes('judgment') || doctype.includes('order');
+      });
     } catch (error) {
       console.error('Error finding precedents:', error);
       return this.getMockPrecedents();
