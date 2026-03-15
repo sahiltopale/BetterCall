@@ -9,6 +9,7 @@ export interface DraftTask {
   draftType?: string;
   startedAt: string;
   completedAt?: string;
+  notifiedAt?: string;
   result?: any;
   error?: string;
 }
@@ -20,6 +21,7 @@ export interface AnalysisTask {
   documentName: string;
   startedAt: string;
   completedAt?: string;
+  notifiedAt?: string;
   result?: any;
   error?: string;
 }
@@ -48,7 +50,17 @@ export function BackgroundTasksProvider({ children }: { children: ReactNode }) {
     // Load tasks from localStorage on initialization
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [];
+      const parsed = stored ? (JSON.parse(stored) as BackgroundTask[]) : [];
+      // Prevent old tasks from re-triggering notifications after reload
+      return parsed.map((task) => {
+        if (task.status === 'completed' || task.status === 'error') {
+          return {
+            ...task,
+            notifiedAt: task.notifiedAt || task.completedAt || new Date().toISOString(),
+          } as BackgroundTask;
+        }
+        return task;
+      });
     } catch {
       return [];
     }
@@ -59,19 +71,27 @@ export function BackgroundTasksProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
   }, [tasks]);
 
-  // Show notification when task completes
+  // Show notification when task completes (only once per task)
   useEffect(() => {
-    tasks.forEach(task => {
-      if (task.status === 'completed' && !task.completedAt) {
-        const taskName = task.type === 'draft' ? 'Draft Generation' : 'Judgment Analysis';
+    const tasksToNotify = tasks.filter(
+      (task) => (task.status === 'completed' || task.status === 'error') && !task.notifiedAt
+    );
+
+    if (tasksToNotify.length === 0) {
+      return;
+    }
+
+    tasksToNotify.forEach((task) => {
+      const taskName = task.type === 'draft' ? 'Draft Generation' : 'Judgment Analysis';
+      if (task.status === 'completed') {
         toast({
           title: `${taskName} Completed`,
-          description: task.type === 'draft' 
-            ? `Draft "${(task as DraftTask).prompt.substring(0, 50)}..." is ready`
-            : `Analysis for "${(task as AnalysisTask).documentName}" is complete`,
+          description:
+            task.type === 'draft'
+              ? `Draft "${(task as DraftTask).prompt.substring(0, 50)}..." is ready`
+              : `Analysis for "${(task as AnalysisTask).documentName}" is complete`,
         });
       } else if (task.status === 'error' && task.error) {
-        const taskName = task.type === 'draft' ? 'Draft Generation' : 'Judgment Analysis';
         toast({
           title: `${taskName} Failed`,
           description: task.error,
@@ -79,6 +99,15 @@ export function BackgroundTasksProvider({ children }: { children: ReactNode }) {
         });
       }
     });
+
+    setTasks((prev) =>
+      prev.map((task) => {
+        if ((task.status === 'completed' || task.status === 'error') && !task.notifiedAt) {
+          return { ...task, notifiedAt: new Date().toISOString() } as BackgroundTask;
+        }
+        return task;
+      })
+    );
   }, [tasks, toast]);
 
   const addTask = (task: NewDraftTask | NewAnalysisTask) => {

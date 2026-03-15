@@ -20,7 +20,7 @@
 
 #### 2. **DraftGenerator** (`backend/src/services/draftGenerator.ts`)
 - ❌ Removed: GPT-4 generation
-- ✅ Added: Gemini `gemini-2.5-flash` for generation
+- ✅ Added: Gemini `gemini-3.1-flash-lite-preview` for generation
 - ✅ All methods updated: generate, refine, compare, extract sections
 - ✅ Suggestions generation with Gemini
 
@@ -113,10 +113,10 @@ npm run dev
 | Function | Model | Dimension |
 |----------|-------|-----------|
 | Embeddings | `text-embedding-004` | 768 |
-| Generation | `gemini-2.5-flash` | - |
-| Refinement | `gemini-2.5-flash` | - |
-| Comparison | `gemini-2.5-flash` | - |
-| Sections | `gemini-2.5-flash` | - |
+| Generation | `gemini-3.1-flash-lite-preview` | - |
+| Refinement | `gemini-3.1-flash-lite-preview` | - |
+| Comparison | `gemini-3.1-flash-lite-preview` | - |
+| Sections | `gemini-3.1-flash-lite-preview` | - |
 
 ## 📋 API Endpoints (Unchanged)
 

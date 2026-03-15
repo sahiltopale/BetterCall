@@ -361,7 +361,7 @@ Return ONLY the laws that are explicitly mentioned or applied in the judgment as
 ["Section X of Act Y", "Article Z of Constitution", ...]`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
         }
@@ -430,7 +430,7 @@ Document: ${text.substring(0, 3000)}${text.length > 3000 ? '...' : ''}
 Return as a JSON array of strings: ["concept1", "concept2", ...]`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
         }
@@ -567,11 +567,11 @@ Format as JSON:
 
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.4,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 4096,
         }
       });
 

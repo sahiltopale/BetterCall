@@ -90,11 +90,11 @@ Provide comprehensive legal analysis in JSON format:
 }`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.4,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 4096,
         }
       });
 
@@ -145,7 +145,7 @@ Return as a JSON array of strings:
 ["question1", "question2", "question3", "question4", "question5"]`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
         }
@@ -188,7 +188,7 @@ Provide a coherent summary that explains:
 3. Practical implications for current practice`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash"
+        model: "gemini-3.1-flash-lite-preview"
       });
 
       const result = await model.generateContent(prompt);
@@ -219,7 +219,7 @@ Focus on Indian constitutional law, civil and criminal procedure, and major stat
       const fullPrompt = `${systemPrompt}\n\nConversation:\n${conversationHistory}\n\nResponse:`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash"
+        model: "gemini-3.1-flash-lite-preview"
       });
 
       const result = await model.generateContent(fullPrompt);
@@ -266,7 +266,7 @@ Return as JSON:
 }`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
         }
@@ -317,7 +317,7 @@ Provide a structured outline as JSON array:
 ["I. Introduction and Statement of Facts", "II. Issues Presented", ...]`;
 
       const model = this.gemini.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite-preview",
         generationConfig: {
           responseMimeType: "application/json",
         }

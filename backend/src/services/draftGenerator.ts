@@ -21,72 +21,95 @@ export class DraftGenerator {
   }
 
   /**
-   * Generate a legal draft using RAG approach
+   * Generate a legal draft using RAG approach with retry logic
    */
   async generateDraft(
     request: DraftGenerationRequest,
     options: GenerationOptions = {}
   ): Promise<DraftGenerationResponse> {
     const startTime = Date.now();
+    const maxRetries = 3;
+    let lastError: Error | null = null;
 
-    try {
-      // Step 1: Build search query
-      const searchQuery = this.buildSearchQuery(request);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Step 1: Build search query
+        const searchQuery = this.buildSearchQuery(request);
 
-      // Step 2: Retrieve relevant context from existing drafts
-      const similarDrafts = await this.draftProcessor.searchSimilarDrafts(
-        searchQuery,
-        5 // Top 5 most relevant drafts
-      );
+        // Step 2: Retrieve relevant context from existing drafts
+        const similarDrafts = await this.draftProcessor.searchSimilarDrafts(
+          searchQuery,
+          5 // Top 5 most relevant drafts
+        );
 
-      // Step 3: Build context from similar drafts
-      const context = this.buildContext(similarDrafts);
+        // Step 3: Build context from similar drafts
+        const context = this.buildContext(similarDrafts);
 
-      // Step 4: Generate draft using Gemini with context
-      const systemPrompt = this.buildSystemPrompt(request.draftType);
-      const userPrompt = this.buildUserPrompt(request, context);
+        // Step 4: Generate draft using Gemini with context
+        const systemPrompt = this.buildSystemPrompt(request.draftType);
+        const userPrompt = this.buildUserPrompt(request, context);
 
-      const model = this.gemini.getGenerativeModel({ 
-        model: options.model || 'gemini-2.5-flash',
-        generationConfig: {
-          temperature: options.temperature || 0.7,
-          maxOutputTokens: options.maxTokens || 3000,
-        }
-      });
+        const model = this.gemini.getGenerativeModel({ 
+          model: options.model || 'gemini-3.1-flash-lite-preview',
+          generationConfig: {
+            temperature: options.temperature || 0.7,
+            maxOutputTokens: options.maxTokens || 2000, // Reduced from 3000 to stay within quota
+          }
+        });
 
-      const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-      const result = await model.generateContent(fullPrompt);
-      const response = await result.response;
-      
-      const generatedDraft = response.text() || '';
-      const tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
+        const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+        const result = await model.generateContent(fullPrompt);
+        const response = await result.response;
+        
+        const generatedDraft = response.text() || '';
+        const tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
 
-      // Step 5: Generate suggestions for improvement
-      const suggestions = await this.generateSuggestions(generatedDraft, request);
+        // Step 5: Generate suggestions for improvement
+        const suggestions = await this.generateSuggestions(generatedDraft, request);
 
-      // Step 6: Format response
-      const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
+        // Step 6: Format response
+        const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
-      return {
-        id: `draft-${Date.now()}`,
-        draft: generatedDraft,
-        metadata: {
-          generatedAt: new Date().toISOString(),
-          model: options.model || 'gpt-4-turbo-preview',
-          tokensUsed,
-          processingTime: `${processingTime}s`,
-        },
-        references: similarDrafts.map(draft => ({
-          filename: draft.filename,
+        return {
+          id: `draft-${Date.now()}`,
+          draft: generatedDraft,
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            model: options.model || 'gpt-4-turbo-preview',
+            tokensUsed,
+            processingTime: `${processingTime}s`,
+          },
+          references: similarDrafts.map(draft => ({
+            filename: draft.filename,
           relevanceScore: draft.score,
           sections: [draft.text.substring(0, 100) + '...'],
         })),
         suggestions,
       };
-    } catch (error) {
-      console.error('Error generating draft:', error);
-      throw error;
+    } catch (error: any) {
+      lastError = error;
+      const isQuotaError = error?.message?.includes('quota') || error?.message?.includes('429') || error?.message?.includes('Resource');
+      
+      if (isQuotaError && attempt < maxRetries - 1) {
+        // Exponential backoff: wait 2^attempt seconds before retrying
+        const waitTime = Math.pow(2, attempt) * 1000;
+        console.warn(`⚠️ Quota limit hit, retrying in ${waitTime}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      
+      if (attempt === maxRetries - 1) {
+        console.error(`❌ Draft generation failed after ${maxRetries} attempts:`, error);
+      }
     }
+    }
+
+    // If we exhausted all retries, throw the last error
+    if (lastError) {
+      throw new Error(`Failed to generate draft after ${maxRetries} attempts: ${lastError.message}`);
+    }
+
+    throw new Error('Failed to generate draft: Unknown error');
   }
 
   /**
@@ -241,7 +264,7 @@ For legal notices specifically:
   ): Promise<string[]> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite-preview',
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 500,
@@ -287,7 +310,7 @@ Format your response as numbered list.`;
   ): Promise<string> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite-preview',
         generationConfig: {
           temperature: 0.5,
           maxOutputTokens: 3000,
@@ -320,7 +343,7 @@ Please provide the refined draft.`;
   async extractSections(draft: string): Promise<Record<string, string>> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite-preview',
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 2000,
@@ -351,7 +374,7 @@ ${draft}`;
   async compareDrafts(draft1: string, draft2: string): Promise<string> {
     try {
       const model = this.gemini.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite-preview',
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 1500,
