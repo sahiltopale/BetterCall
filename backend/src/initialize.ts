@@ -170,10 +170,11 @@ export async function populateSampleLegalData(): Promise<void> {
   ];
 
   try {
-    await ragService.batchUploadDocuments(sampleDocuments, 5);
-    console.log(`✅ Successfully uploaded ${sampleDocuments.length} sample legal documents`);
+    const uploadedCount = await ragService.batchUploadDocuments(sampleDocuments, 5);
+    console.log(`✅ Successfully uploaded ${uploadedCount} sample legal documents`);
   } catch (error) {
     console.error("❌ Error uploading sample documents:", error);
+    throw error;
   }
 }
 

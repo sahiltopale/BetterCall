@@ -63,8 +63,8 @@ export default function Dashboard() {
 
   const quickActions = [
     {
-      title: "Search Cases",
-      description: "Find relevant legal cases instantly",
+      title: "Maharashtra Acts",
+      description: "Browse and search Maharashtra acts",
       icon: Search,
       href: "/search",
       color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",

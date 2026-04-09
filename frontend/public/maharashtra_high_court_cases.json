@@ -1,0 +1,57 @@
+[
+  {
+    "case_number": "AIR 2023 Bom 890",
+    "title": "Priya Sharma vs. Municipal Corporation of Mumbai",
+    "court": "Bombay High Court",
+    "date": "2023-01-10",
+    "judges": ["Justice K. Desai", "Justice S. Rao"],
+    "excerpt": "Property dispute case concerning unauthorized construction and municipal regulations. The court examined the balance between property rights and public interest in urban planning.",
+    "citations": ["AIR 1993 SC 1960", "(2011) 2 SCC 752"],
+    "verdict": "Partial relief granted. Demolition stayed subject to compliance with regulations.",
+    "view_url": "https://example.com/maharashtra-high-court/air-2023-bom-890"
+  },
+  {
+    "case_number": "AIR 2022 Bom 517",
+    "title": "Maharashtra State Cooperative Bank vs. Anil Traders",
+    "court": "Bombay High Court",
+    "date": "2022-09-14",
+    "judges": ["Justice A.V. Kulkarni"],
+    "excerpt": "A banking and recovery dispute involving the enforcement of security interests and the scope of statutory notice requirements under Maharashtra recovery laws.",
+    "citations": ["(2010) 8 SCC 110", "AIR 2018 SC 1025"],
+    "verdict": "Writ petition dismissed. Statutory recovery steps were held to be valid.",
+    "view_url": "https://example.com/maharashtra-high-court/air-2022-bom-517"
+  },
+  {
+    "case_number": "AIR 2024 Bom 102",
+    "title": "Rohit Patil vs. State of Maharashtra",
+    "court": "Bombay High Court",
+    "date": "2024-02-28",
+    "judges": ["Justice N. Bhosale", "Justice P. Jadhav"],
+    "excerpt": "Challenge to an administrative order affecting local employment rights. The bench considered fairness, proportionality, and procedural compliance.",
+    "citations": ["(2019) 4 SCC 130", "AIR 2021 SC 311"],
+    "verdict": "Interim relief granted pending final adjudication.",
+    "view_url": "https://example.com/maharashtra-high-court/air-2024-bom-102"
+  },
+  {
+    "case_number": "AIR 2023 Bom 611",
+    "title": "Sunita Gaikwad vs. Pune Municipal Corporation",
+    "court": "Bombay High Court",
+    "date": "2023-07-18",
+    "judges": ["Justice R. More"],
+    "excerpt": "A municipal law dispute involving property taxation, notice procedures, and the limits of local authority action.",
+    "citations": ["AIR 2001 SC 123", "(2015) 6 SCC 41"],
+    "verdict": "Matter remanded for fresh consideration with directions to follow due process.",
+    "view_url": "https://example.com/maharashtra-high-court/air-2023-bom-611"
+  },
+  {
+    "case_number": "AIR 2021 Bom 298",
+    "title": "Shree Siddhivinayak Co-op Housing Society vs. State of Maharashtra",
+    "court": "Bombay High Court",
+    "date": "2021-11-05",
+    "judges": ["Justice M. Joshi", "Justice S. Kulkarni"],
+    "excerpt": "A housing society dispute relating to redevelopment permissions, member consent, and the exercise of regulatory powers by the State.",
+    "citations": ["(2004) 3 SCC 137", "AIR 2012 SC 276"],
+    "verdict": "Petition disposed of with directions to conduct a lawful redevelopment process.",
+    "view_url": "https://example.com/maharashtra-high-court/air-2021-bom-298"
+  }
+]

@@ -31,7 +31,7 @@ const mainItems = [
     icon: Home,
   },
   {
-    title: "Case Search",
+    title: "Maharashtra Acts",
     url: "/search",
     icon: Search,
   },

@@ -10,6 +10,7 @@
     "check": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "process-drafts": "tsx src/scripts/processDrafts.ts",
+    "process-acts": "tsx src/scripts/processActsFolder.ts",
     "test-drafts": "tsx src/scripts/testDraftGeneration.ts"
   },
   "dependencies": {

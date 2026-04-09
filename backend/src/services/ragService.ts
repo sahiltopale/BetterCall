@@ -35,10 +35,16 @@ export class RAGService {
   private pinecone: Pinecone | null = null;
   private gemini: GoogleGenerativeAI | null = null;
   private indexName: string;
+  private similarityThreshold: number;
+  private indexDimension: number | null = null;
   private initialized = false;
 
   constructor() {
     this.indexName = process.env.PINECONE_INDEX_NAME || "legal-documents";
+    const configuredThreshold = Number(process.env.RAG_SIMILARITY_THRESHOLD || 0.45);
+    this.similarityThreshold = Number.isFinite(configuredThreshold)
+      ? configuredThreshold
+      : 0.45;
   }
 
   private ensureInitialized(): void {
@@ -86,6 +92,17 @@ export class RAGService {
       }
 
       this.indexName = process.env.PINECONE_INDEX_NAME || process.env.VITE_PINECONE_INDEX_NAME || "legal-documents";
+
+      try {
+        const indexDescription = await this.pinecone.describeIndex(this.indexName);
+        if (typeof indexDescription.dimension === 'number') {
+          this.indexDimension = indexDescription.dimension;
+          console.log(`✅ Pinecone index ${this.indexName} dimension: ${this.indexDimension}`);
+        }
+      } catch (describeError) {
+        console.warn(`⚠️ Could not read dimension for index ${this.indexName}:`, describeError);
+      }
+
       this.initialized = true;
 
       console.log("RAG Service initialized successfully");
@@ -106,20 +123,54 @@ export class RAGService {
         throw new Error("Gemini client not initialized");
       }
 
-      // For now, generate a mock embedding since embeddings might not be available
-      // In production, you would use a proper embedding service
-      const mockEmbedding = Array.from({ length: 768 }, () => Math.random() - 0.5);
-      return mockEmbedding;
+      const model = this.gemini.getGenerativeModel(
+        { model: "gemini-embedding-001" },
+        { apiVersion: "v1beta" }
+      );
+      const result = await model.embedContent(text.slice(0, 12000));
+      const values = result.embedding?.values;
+
+      if (!values || values.length === 0) {
+        throw new Error("Gemini embedding response was empty");
+      }
+
+      return this.alignToIndexDimension(values);
     } catch (error) {
       console.error("Error generating embedding:", error);
       throw new Error("Failed to generate embedding");
     }
   }
 
+  private alignToIndexDimension(values: number[]): number[] {
+    if (!this.indexDimension || values.length === this.indexDimension) {
+      return values;
+    }
+
+    if (values.length > this.indexDimension) {
+      console.warn(
+        `Embedding dimension ${values.length} exceeds index dimension ${this.indexDimension}; truncating.`
+      );
+      return values.slice(0, this.indexDimension);
+    }
+
+    console.warn(
+      `Embedding dimension ${values.length} is below index dimension ${this.indexDimension}; padding with zeros.`
+    );
+    return [...values, ...new Array(this.indexDimension - values.length).fill(0)];
+  }
+
   /**
    * Search for relevant legal documents using vector similarity
    */
   async searchRelevantLaws(query: string, topK: number = 10): Promise<RAGSearchResult[]> {
+    return this.searchRelevantLawsByIndex(query, topK, this.indexName);
+  }
+
+  private async searchRelevantLawsByIndex(
+    query: string,
+    topK: number,
+    indexName: string
+  ): Promise<RAGSearchResult[]> {
     try {
       this.ensureInitialized();
       
@@ -132,7 +183,7 @@ export class RAGService {
       const queryEmbedding = await this.generateEmbedding(query);
 
       // Get Pinecone index
-      const index = this.pinecone!.Index(this.indexName);
+      const index = this.pinecone!.Index(indexName);
 
       // Perform vector search
       const searchResponse = await index.query({
@@ -158,9 +209,9 @@ export class RAGService {
         }
       })) || [];
 
-      return results.filter(result => result.relevanceScore > 0.7); // Filter by relevance threshold
+      return results.filter((result) => result.relevanceScore >= this.similarityThreshold);
     } catch (error) {
-      console.error("Error in vector search:", error);
+      console.error(`Error in vector search for index ${indexName}:`, error);
       // Return mock data if Pinecone is not available
       return this.getMockSearchResults(query);
     }
@@ -171,23 +222,34 @@ export class RAGService {
    */
   async analyzeJudgmentWithRAG(judgmentText: string): Promise<RAGAnalysisResult> {
     try {
+      const analysisIndex =
+        process.env.PINECONE_ANALYSIS_INDEX ||
+        process.env.PINECONE_ACTS_INDEX ||
+        'legal-acts';
+
       // Step 1: Extract key legal concepts, sections, and acts from judgment
       const legalConcepts = await this.extractLegalConcepts(judgmentText);
       console.log(`Extracted ${legalConcepts.length} legal concepts from document`);
 
       // Step 2: Perform multiple targeted vector searches for comprehensive context
-      const relevantLawsGeneral = await this.searchRelevantLaws(judgmentText.substring(0, 3000), 15);
+      const relevantLawsGeneral = await this.searchRelevantLawsByIndex(
+        judgmentText.substring(0, 3000),
+        15,
+        analysisIndex
+      );
       
       // Search for specific statutory provisions mentioned
-      const statutoryProvisions = await this.searchRelevantLaws(
+      const statutoryProvisions = await this.searchRelevantLawsByIndex(
         legalConcepts.filter(c => c.includes('Section') || c.includes('Article')).join(' '),
-        10
+        10,
+        analysisIndex
       );
       
       // Search for constitutional and procedural law
-      const proceduralLaw = await this.searchRelevantLaws(
+      const proceduralLaw = await this.searchRelevantLawsByIndex(
         `${judgmentText.substring(0, 1000)} constitutional law civil procedure criminal procedure`,
-        10
+        10,
+        analysisIndex
       );
 
       // Step 3: Combine and deduplicate all retrieved laws
@@ -660,15 +722,17 @@ Format as JSON:
   /**
    * Batch upload multiple documents
    */
-  async batchUploadDocuments(documents: any[], batchSize: number = 100): Promise<void> {
+  async batchUploadDocuments(documents: any[], batchSize: number = 100): Promise<number> {
     try {
       this.ensureInitialized();
       
       // If not fully configured, skip upload but don't error
       if (!this.isFullyConfigured()) {
         console.log(`Skipping upload of ${documents.length} documents - services not fully configured`);
-        return;
+        return 0;
       }
+
+      let totalUploaded = 0;
 
       for (let i = 0; i < documents.length; i += batchSize) {
         const batch = documents.slice(i, i + batchSize);
@@ -702,13 +766,22 @@ Format as JSON:
           }
           const index = this.pinecone.Index(this.indexName);
           await index.upsert(vectors);
+          totalUploaded += vectors.length;
           
           console.log(`Uploaded batch ${Math.floor(i/batchSize) + 1}: ${vectors.length} documents`);
+        } else {
+          console.warn(`Batch ${Math.floor(i/batchSize) + 1} produced 0 vectors (embedding failures)`);
         }
 
         // Add delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
+
+      if (totalUploaded === 0) {
+        throw new Error("No vectors were uploaded. Embedding generation failed for all documents.");
+      }
+
+      return totalUploaded;
     } catch (error) {
       console.error("Error in batch upload:", error);
       throw error;
