@@ -28,6 +28,9 @@ export interface AnalysisResult {
   id: string;
   documentName: string;
   uploadDate: string;
+  documentType?: string;
+  documentTypeConfidence?: number;
+  documentTypeIndicators?: string[];
   analysis: {
     summary: string;
     keyPoints: string[];
@@ -43,6 +46,14 @@ export interface AnalysisResult {
       act: string;
       section: string;
       relevance: string;
+      legalStatus?: 'VALID' | 'AMENDED' | 'REPEALED' | 'UNKNOWN';
+      statusReasoning?: string;
+      relatedCases?: Array<{
+        title: string;
+        date: string;
+        court: string;
+        url: string;
+      }>;
     }>;
     legalIssues: string[];
     recommendations: string[];
@@ -53,6 +64,16 @@ export interface AnalysisResult {
       date: string;
       url: string;
     }>;
+  };
+  goodLawCheck?: {
+    checked: boolean;
+    totalLawsChecked: number;
+    summary: {
+      valid: number;
+      amended: number;
+      repealed: number;
+      unknown: number;
+    };
   };
   confidence: number;
   processingTime: string;
@@ -370,6 +391,43 @@ class ApiService {
     return this.makeRequest('/api/predict-case', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Check if laws are still valid (Good Law Check)
+   */
+  async checkLawStatus(laws: Array<{
+    act: string;
+    section?: string;
+    provision?: string;
+  }>): Promise<{
+    lawsChecked: number;
+    results: Array<{
+      act: string;
+      section: string;
+      status: 'VALID' | 'AMENDED' | 'REPEALED' | 'UNKNOWN';
+      reasoning: string;
+      lastUpdated: string;
+      relatedCases: Array<{
+        title: string;
+        date: string;
+        court: string;
+        url: string;
+      }>;
+      confidence: number;
+    }>;
+    summary: {
+      valid: number;
+      amended: number;
+      repealed: number;
+      unknown: number;
+    };
+    timestamp: string;
+  }> {
+    return this.makeRequest('/api/check-law-status', {
+      method: 'POST',
+      body: JSON.stringify({ laws }),
     });
   }
 

@@ -356,6 +356,19 @@ export class RAGService {
         lawsApplied.push(...additionalLaws);
       }
 
+      // Fallback: If no laws found, extract from patterns in text
+      if (lawsApplied.length === 0) {
+        console.log("No laws found in vector DB, trying AI-based extraction");
+        try {
+          const aiExtractedLaws = await this.extractLawsWithAI(judgmentText);
+          lawsApplied.push(...aiExtractedLaws);
+        } catch (error) {
+          console.warn("AI extraction failed, using pattern-based extraction:", error);
+          const patternBasedLaws = this.extractLawsFromDocument(judgmentText);
+          lawsApplied.push(...patternBasedLaws);
+        }
+      }
+
       // Remove duplicates based on provision
       const uniqueLaws = Array.from(
         new Map(lawsApplied.map(law => [law.provision, law])).values()
@@ -366,6 +379,176 @@ export class RAGService {
       console.error("Error extracting applied laws:", error);
       return [];
     }
+  }
+
+  /**
+   * Use AI to extract all laws mentioned in document
+   */
+  private async extractLawsWithAI(text: string): Promise<Array<{
+    provision: string;
+    fullText: string;
+    act: string;
+    section: string;
+    relevance: string;
+  }>> {
+    if (!this.gemini) {
+      console.warn("Gemini not available for AI extraction");
+      return [];
+    }
+
+    try {
+      const model = this.gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      const prompt = `Extract ALL laws, acts, sections, and articles mentioned in this legal document. Return ONLY a JSON array.
+
+DOCUMENT:
+${text.substring(0, 3000)}
+
+Return ONLY this exact JSON format (no other text):
+[
+  {
+    "section": "Section 307",
+    "act": "Indian Penal Code",
+    "provision": "Section 307 of Indian Penal Code",
+    "relevance": "Applied in judgment"
+  }
+]`;
+
+      const result = await model.generateContent(prompt);
+      const responseText = result.response.text();
+      
+      // Extract JSON from response
+      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        console.warn("No JSON found in AI extraction response");
+        return [];
+      }
+
+      const extractedLaws = JSON.parse(jsonMatch[0]);
+      
+      return extractedLaws.map((law: any) => ({
+        provision: law.provision || `${law.section} of ${law.act}`,
+        fullText: `${law.section} of ${law.act}. ${law.relevance || ''}`,
+        act: law.act,
+        section: law.section,
+        relevance: law.relevance || this.determineRelevance(law.section, text)
+      }));
+    } catch (error) {
+      console.error("AI extraction error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Extract laws from document patterns when vector DB is not available
+   */
+  private extractLawsFromDocument(text: string): Array<{
+    provision: string;
+    fullText: string;
+    act: string;
+    section: string;
+    relevance: string;
+  }> {
+    const laws: Array<{
+      provision: string;
+      fullText: string;
+      act: string;
+      section: string;
+      relevance: string;
+    }> = [];
+    const seen = new Set<string>();
+
+    // Pattern 1: "Section X of Act Name" or "Section X, Act Name"
+    const sectionPattern = /(?:Section|Sec\.?|§)\s*(\d+[A-Z]?(?:\([a-z0-9\-]+\))?)\s*(?:of|,)\s*(?:the\s+)?([A-Za-z\s,\(\)&'-]+?)(?:\s+\d{4})?(?=[,.;]|\s+and|\s+in|$)/gi;
+    let match;
+    while ((match = sectionPattern.exec(text)) !== null) {
+      const section = `Section ${match[1]}`;
+      const actName = match[2].trim().replace(/\s+Act\s*$/i, '').trim();
+      const provision = `${section} of ${actName}`;
+      
+      if (!seen.has(provision) && actName.length > 2) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: actName,
+          section,
+          relevance: this.determineRelevance(section, text)
+        });
+        seen.add(provision);
+      }
+    }
+
+    // Pattern 2: IPC/CrPC/CPC sections: "S. 307 IPC" or "Sec 482 CrPC"
+    const codePattern = /(?:Section|Sec\.?|S\.)\s*(\d+[A-Z]?)\s+(?:(IPC|BNSS|Cr\.?PC|CPC|NDPS|IEA))/gi;
+    while ((match = codePattern.exec(text)) !== null) {
+      const section = `Section ${match[1]}`;
+      const codeAbbrev = match[2].toUpperCase();
+      
+      // Map abbreviations to full names
+      const codeMap: Record<string, string> = {
+        'IPC': 'Indian Penal Code',
+        'BNSS': 'Bharatiya Nagarik Suraksha Sanhita',
+        'CRPC': 'Code of Criminal Procedure',
+        'CR.PC': 'Code of Criminal Procedure',
+        'CPC': 'Code of Civil Procedure',
+        'IEA': 'Indian Evidence Act',
+        'NDPS': 'Narcotic Drugs and Psychotropic Substances Act'
+      };
+      
+      const actName = codeMap[codeAbbrev] || codeAbbrev;
+      const provision = `${section} of ${actName}`;
+      
+      if (!seen.has(provision)) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: actName,
+          section,
+          relevance: this.determineRelevance(section, text)
+        });
+        seen.add(provision);
+      }
+    }
+
+    // Pattern 3: Constitution articles: "Article 21" or "Art. 14"
+    const articlePattern = /(?:Article|Art\.)\s*(\d+[A-Z]?)/gi;
+    while ((match = articlePattern.exec(text)) !== null) {
+      const article = `Article ${match[1]}`;
+      const provision = `${article} of the Constitution of India`;
+      
+      if (!seen.has(provision)) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: 'Constitution of India',
+          section: article,
+          relevance: this.determineRelevance(article, text)
+        });
+        seen.add(provision);
+      }
+    }
+
+    // Pattern 4: Bare act citations like "Section 482 BNSS, 2023"
+    const bareActPattern = /(?:Section|Sec\.?)\s*(\d+[A-Z]?)\s+(?:of\s+)?(?:the\s+)?(Bharatiya\s+Nagarik\s+Suraksha\s+Sanhita|BNSS)(?:,\s*(\d{4}))?/gi;
+    while ((match = bareActPattern.exec(text)) !== null) {
+      const section = `Section ${match[1]}`;
+      const actName = 'Bharatiya Nagarik Suraksha Sanhita (BNSS)';
+      const provision = `${section} of ${actName}`;
+      
+      if (!seen.has(provision)) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: actName,
+          section,
+          relevance: this.determineRelevance(section, text)
+        });
+        seen.add(provision);
+      }
+    }
+
+    console.log(`Pattern extraction found ${laws.length} laws`);
+    return laws;
   }
 
   /**

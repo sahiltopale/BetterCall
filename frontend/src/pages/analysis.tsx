@@ -498,12 +498,72 @@ export default function Analysis() {
                     <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                       {law.fullText.length > 300 ? `${law.fullText.substring(0, 300)}...` : law.fullText}
                     </p>
-                    <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+                    <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 mb-2">
                       <Scale className="h-3 w-3" />
                       <span className="font-medium">{law.relevance}</span>
                     </div>
+                    {/* Good Law Check Status */}
+                    {law.legalStatus && (
+                      <div className={`flex items-center gap-2 pt-2 border-t ${
+                        law.legalStatus === 'VALID' ? 'text-green-600' :
+                        law.legalStatus === 'AMENDED' ? 'text-amber-600' :
+                        law.legalStatus === 'REPEALED' ? 'text-red-600' :
+                        'text-gray-600'
+                      }`}>
+                        <AlertCircle className="h-3 w-3" />
+                        <span className="text-xs font-medium">
+                          {law.legalStatus === 'VALID' && '✓ Still Valid'}
+                          {law.legalStatus === 'AMENDED' && '⚠ Has Been Amended'}
+                          {law.legalStatus === 'REPEALED' && '✕ Repealed'}
+                          {law.legalStatus === 'UNKNOWN' && '? Status Unknown'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {(analysis as any).goodLawCheck && (analysis as any).goodLawCheck.checked && (
+            <Card className="border-green-200 dark:border-green-900">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="h-5 w-5" />
+                  Good Law Check Results
+                </CardTitle>
+                <CardDescription>
+                  Verification of whether the applicable laws are still in force
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200">
+                    <div className="text-2xl font-bold text-green-600">{(analysis as any).goodLawCheck.summary.valid}</div>
+                    <div className="text-xs text-green-700 dark:text-green-400 font-medium">Valid Laws</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200">
+                    <div className="text-2xl font-bold text-amber-600">{(analysis as any).goodLawCheck.summary.amended}</div>
+                    <div className="text-xs text-amber-700 dark:text-amber-400 font-medium">Amended</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200">
+                    <div className="text-2xl font-bold text-red-600">{(analysis as any).goodLawCheck.summary.repealed}</div>
+                    <div className="text-xs text-red-700 dark:text-red-400 font-medium">Repealed</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-950/30 border border-gray-200">
+                    <div className="text-2xl font-bold text-gray-600">{(analysis as any).goodLawCheck.summary.unknown}</div>
+                    <div className="text-xs text-gray-700 dark:text-gray-400 font-medium">Unknown</div>
+                  </div>
+                </div>
+                
+                <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 p-3 rounded-lg">
+                  <p className="text-sm text-green-800 dark:text-green-300">
+                    <strong>ℹ Good Law Check:</strong> All applicable laws have been verified for current status. 
+                    {(analysis as any).goodLawCheck.summary.valid > 0 && ` ${(analysis as any).goodLawCheck.summary.valid} law(s) are still in force.`}
+                    {(analysis as any).goodLawCheck.summary.amended > 0 && ` ${(analysis as any).goodLawCheck.summary.amended} law(s) have been amended - review latest version.`}
+                    {(analysis as any).goodLawCheck.summary.repealed > 0 && ` ⚠ ${(analysis as any).goodLawCheck.summary.repealed} law(s) have been repealed.`}
+                  </p>
+                </div>
               </CardContent>
             </Card>
           )}

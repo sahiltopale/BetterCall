@@ -127,6 +127,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Search for relevant precedents using India Kanoon
       const precedents = await indiaKanoonService.findRelevantPrecedents(documentText);
 
+      // Extract laws from document and RAG analysis
+      const appliedLaws = ragAnalysis.lawsApplied && Array.isArray(ragAnalysis.lawsApplied) ? ragAnalysis.lawsApplied : [];
+      
+      console.log(`Laws extracted from RAG: ${appliedLaws.length}`);
+      console.log('Laws:', JSON.stringify(appliedLaws.slice(0, 2)));
+
+      // If no laws found in RAG, try extracting from the summary
+      let lawsToCheck = appliedLaws;
+      if (lawsToCheck.length === 0 && ragAnalysis.summary) {
+        console.log("Extracting laws from analysis summary");
+        const summaryLaws = aiService.extractLawsFromText(ragAnalysis.summary);
+        lawsToCheck = summaryLaws;
+        console.log(`Extracted ${summaryLaws.length} laws from summary`);
+      }
+
+      // Perform Good Law Check on applied laws
+      let goodLawCheckResults: any[] = [];
+      try {
+        if (lawsToCheck.length > 0) {
+          const lawsToCheckPayload = lawsToCheck.map(law => ({
+            act: law.act,
+            section: law.section,
+            provision: law.provision
+          }));
+          
+          console.log(`Running good law check on ${lawsToCheckPayload.length} laws`);
+          
+          // Call the law check method directly from aiService
+          goodLawCheckResults = await aiService.checkLawStatus(lawsToCheckPayload, indiaKanoonService);
+          
+          console.log(`Good law check completed: ${goodLawCheckResults.length} results`);
+        } else {
+          console.warn("No laws found in RAG analysis or summary for good law check");
+        }
+      } catch (error) {
+        console.error("Good law check failed:", error);
+      }
+
+      // Combine laws with their status
+      const lawsWithStatus = lawsToCheck.map((law: any) => {
+        const status = goodLawCheckResults.find(g => g.act === law.act && g.section === law.section) || 
+                       { status: 'UNKNOWN', reasoning: 'Status not verified' };
+        return {
+          provision: law.provision,
+          fullText: law.fullText,
+          act: law.act,
+          section: law.section,
+          relevance: law.relevance,
+          legalStatus: status.status,
+          statusReasoning: status.reasoning,
+          relatedCases: status.relatedCases || []
+        };
+      });
+
       // Create enhanced summary with document type information
       const enhancedSummary = `[Document Type: ${documentTypeInfo.type} (${Math.round(documentTypeInfo.confidence * 100)}% confidence)]\n\n${ragAnalysis.summary}${documentTypeInfo.type !== "Judgment/Order" ? `\n\n⚠️ NOTE: This document is classified as "${documentTypeInfo.type}" rather than a judgment. Analysis has been adapted accordingly. Key indicators: ${documentTypeInfo.indicators.join("; ")}` : ""}`;
 
@@ -141,13 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         analysis: {
           summary: enhancedSummary,
           keyPoints: ragAnalysis.keyPoints,
-          lawsApplied: ragAnalysis.lawsApplied.map(law => ({
-            provision: law.provision,
-            fullText: law.fullText,
-            act: law.act,
-            section: law.section,
-            relevance: law.relevance
-          })),
+          lawsApplied: lawsWithStatus,
           precedentsFound: ragAnalysis.relevantLaws.slice(0, 5).map(law => ({
             caseId: law.id,
             caseTitle: law.lawName,
@@ -163,6 +211,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             date: p.docdisplaydate,
             url: p.url
           }))
+        },
+        goodLawCheck: {
+          checked: goodLawCheckResults.length > 0,
+          totalLawsChecked: goodLawCheckResults.length,
+          summary: {
+            valid: goodLawCheckResults.filter(l => l.status === "VALID").length,
+            amended: goodLawCheckResults.filter(l => l.status === "AMENDED").length,
+            repealed: goodLawCheckResults.filter(l => l.status === "REPEALED").length,
+            unknown: goodLawCheckResults.filter(l => l.status === "UNKNOWN").length
+          }
         },
         confidence: ragAnalysis.confidence,
         processingTime: "2-3 seconds"
@@ -913,6 +971,116 @@ Provide a detailed prediction in this exact JSON format:
     } catch (error: any) {
       console.error("Case prediction error:", error);
       res.status(500).json({ error: error.message || "Failed to predict case outcome" });
+    }
+  });
+
+  // Good Law Check endpoint - Verify if laws are still valid/enacted
+  app.post("/api/check-law-status", async (req, res) => {
+    try {
+      const { laws } = req.body;
+      
+      if (!laws || !Array.isArray(laws)) {
+        return res.status(400).json({ error: "Laws array is required" });
+      }
+
+      // Check each law's status
+      const statusChecks = await Promise.all(
+        laws.map(async (law: any) => {
+          const lawName = law.act || law.provision || law.title || "";
+          const section = law.section || "";
+          
+          try {
+            // Search for current status of the law in India Kanoon
+            const searchQuery = `${lawName} ${section ? `section ${section}` : ""} amended repealed status`;
+            const searchResults = await indiaKanoonService.searchCases({
+              query: searchQuery,
+              maxResults: 5,
+              cite: lawName
+            });
+
+            // Common patterns to identify law status
+            let status = "VALID"; // Default assumption
+            let reasoning = "No changes found - likely still in force";
+            let lastUpdated = new Date().toISOString().split('T')[0];
+
+            // Check search results for repeal/amendment indicators
+            let hasRepealed = false;
+            let hasAmended = false;
+            let relevantCases: any[] = [];
+
+            if (searchResults.docs && searchResults.docs.length > 0) {
+              relevantCases = searchResults.docs.slice(0, 3);
+              
+              for (const doc of searchResults.docs) {
+                const title = (doc.title || "").toLowerCase();
+                const headline = (doc.headline || "").toLowerCase();
+                
+                if (title.includes("repeal") || headline.includes("repeal") || 
+                    title.includes("repealed") || headline.includes("repealed")) {
+                  hasRepealed = true;
+                } else if (title.includes("amend") || headline.includes("amend") ||
+                          title.includes("amendment") || headline.includes("amendment")) {
+                  hasAmended = true;
+                }
+              }
+            }
+
+            // Determine final status
+            if (hasRepealed) {
+              status = "REPEALED";
+              reasoning = "Law appears to have been repealed - verify with official sources";
+            } else if (hasAmended) {
+              status = "AMENDED";
+              reasoning = "Law has been amended - check latest version for applicability";
+            } else {
+              status = "VALID";
+              reasoning = "No repeal found - law likely still applicable";
+            }
+
+            return {
+              act: lawName,
+              section: section,
+              status,
+              reasoning,
+              lastUpdated,
+              relatedCases: relevantCases.map(c => ({
+                title: c.title,
+                date: c.docdisplaydate,
+                court: c.court,
+                url: c.url
+              })),
+              confidence: searchResults.total > 0 ? 0.75 : 0.5
+            };
+          } catch (error: any) {
+            // Fallback for API errors
+            return {
+              act: lawName,
+              section: section || "",
+              status: "UNKNOWN",
+              reasoning: "Unable to verify status - recommend checking official legal databases",
+              lastUpdated: new Date().toISOString().split('T')[0],
+              relatedCases: [],
+              confidence: 0,
+              error: error.message
+            };
+          }
+        })
+      );
+
+      res.json({
+        lawsChecked: statusChecks.length,
+        results: statusChecks,
+        summary: {
+          valid: statusChecks.filter(l => l.status === "VALID").length,
+          amended: statusChecks.filter(l => l.status === "AMENDED").length,
+          repealed: statusChecks.filter(l => l.status === "REPEALED").length,
+          unknown: statusChecks.filter(l => l.status === "UNKNOWN").length
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("Law status check error:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 

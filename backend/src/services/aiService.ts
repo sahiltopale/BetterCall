@@ -482,6 +482,117 @@ Rules:
   }
 
   /**
+   * Extract laws from any text (summary, document, etc.)
+   */
+  extractLawsFromText(text: string): Array<{
+    provision: string;
+    fullText: string;
+    act: string;
+    section: string;
+    relevance: string;
+  }> {
+    const laws: Array<{
+      provision: string;
+      fullText: string;
+      act: string;
+      section: string;
+      relevance: string;
+    }> = [];
+    const seen = new Set<string>();
+
+    // Pattern 1: "Section X of Act Name" or "Section X, Act Name"
+    const sectionPattern = /(?:Section|Sec\.?|§)\s*(\d+[A-Z]?(?:\([a-z0-9\-]+\))?)\s*(?:of|,)\s*(?:the\s+)?([A-Za-z\s,\(\)&'-]+?)(?:\s+\d{4})?(?=[,.;]|\s+and|\s+in|$)/gi;
+    let match;
+    while ((match = sectionPattern.exec(text)) !== null) {
+      const section = `Section ${match[1]}`;
+      const actName = match[2].trim().replace(/\s+Act\s*$/i, '').trim();
+      const provision = `${section} of ${actName}`;
+      
+      if (!seen.has(provision) && actName.length > 2) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: actName,
+          section,
+          relevance: "Mentioned in legal document"
+        });
+        seen.add(provision);
+      }
+    }
+
+    // Pattern 2: IPC/CrPC/CPC sections: "S. 307 IPC" or "Sec 482 CrPC"
+    const codePattern = /(?:Section|Sec\.?|S\.)\s*(\d+[A-Z]?)\s+(?:(IPC|BNSS|Cr\.?PC|CPC|NDPS|IEA))/gi;
+    while ((match = codePattern.exec(text)) !== null) {
+      const section = `Section ${match[1]}`;
+      const codeAbbrev = match[2].toUpperCase();
+      
+      // Map abbreviations to full names
+      const codeMap: Record<string, string> = {
+        'IPC': 'Indian Penal Code',
+        'BNSS': 'Bharatiya Nagarik Suraksha Sanhita',
+        'CRPC': 'Code of Criminal Procedure',
+        'CR.PC': 'Code of Criminal Procedure',
+        'CPC': 'Code of Civil Procedure',
+        'IEA': 'Indian Evidence Act',
+        'NDPS': 'Narcotic Drugs and Psychotropic Substances Act'
+      };
+      
+      const actName = codeMap[codeAbbrev] || codeAbbrev;
+      const provision = `${section} of ${actName}`;
+      
+      if (!seen.has(provision)) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: actName,
+          section,
+          relevance: "Applied in judgment"
+        });
+        seen.add(provision);
+      }
+    }
+
+    // Pattern 3: Constitution articles: "Article 21" or "Art. 14"
+    const articlePattern = /(?:Article|Art\.)\s*(\d+[A-Z]?)/gi;
+    while ((match = articlePattern.exec(text)) !== null) {
+      const article = `Article ${match[1]}`;
+      const provision = `${article} of the Constitution of India`;
+      
+      if (!seen.has(provision)) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: 'Constitution of India',
+          section: article,
+          relevance: "Constitutional foundation"
+        });
+        seen.add(provision);
+      }
+    }
+
+    // Pattern 4: Bare act citations like "Section 482 BNSS, 2023"
+    const bareActPattern = /(?:Section|Sec\.?)\s*(\d+[A-Z]?)\s+(?:of\s+)?(?:the\s+)?(Bharatiya\s+Nagarik\s+Suraksha\s+Sanhita|BNSS)(?:,\s*(\d{4}))?/gi;
+    while ((match = bareActPattern.exec(text)) !== null) {
+      const section = `Section ${match[1]}`;
+      const actName = 'Bharatiya Nagarik Suraksha Sanhita (BNSS)';
+      const provision = `${section} of ${actName}`;
+      
+      if (!seen.has(provision)) {
+        laws.push({
+          provision,
+          fullText: provision,
+          act: actName,
+          section,
+          relevance: "Applicable statute"
+        });
+        seen.add(provision);
+      }
+    }
+
+    return laws;
+  }
+
+  /**
    * Detect document type from content
    */
   detectDocumentType(documentText: string): {
@@ -559,6 +670,96 @@ Rules:
     }
 
     return { type, confidence, indicators };
+  }
+
+  /**
+   * Check if laws are still valid (not repealed/superseded)
+   */
+  async checkLawStatus(laws: Array<{act: string; section?: string; provision?: string}>, indiaKanoonService: any) {
+    const statusChecks = await Promise.all(
+      laws.map(async (law: any) => {
+        const lawName = law.act || law.provision || "";
+        const section = law.section || "";
+        
+        try {
+          // Search for current status of the law in India Kanoon
+          const searchQuery = `${lawName} ${section ? `section ${section}` : ""} amended repealed status`;
+          const searchResults = await indiaKanoonService.searchCases({
+            query: searchQuery,
+            maxResults: 5,
+            cite: lawName
+          });
+
+          // Common patterns to identify law status
+          let status = "VALID"; // Default assumption
+          let reasoning = "No changes found - likely still in force";
+          let lastUpdated = new Date().toISOString().split('T')[0];
+
+          // Check search results for repeal/amendment indicators
+          let hasRepealed = false;
+          let hasAmended = false;
+          let relevantCases: any[] = [];
+
+          if (searchResults.docs && searchResults.docs.length > 0) {
+            relevantCases = searchResults.docs.slice(0, 3);
+            
+            for (const doc of searchResults.docs) {
+              const title = (doc.title || "").toLowerCase();
+              const headline = (doc.headline || "").toLowerCase();
+              
+              if (title.includes("repeal") || headline.includes("repeal") || 
+                  title.includes("repealed") || headline.includes("repealed")) {
+                hasRepealed = true;
+              } else if (title.includes("amend") || headline.includes("amend") ||
+                        title.includes("amendment") || headline.includes("amendment")) {
+                hasAmended = true;
+              }
+            }
+          }
+
+          // Determine final status
+          if (hasRepealed) {
+            status = "REPEALED";
+            reasoning = "Law appears to have been repealed - verify with official sources";
+          } else if (hasAmended) {
+            status = "AMENDED";
+            reasoning = "Law has been amended - check latest version for applicability";
+          } else {
+            status = "VALID";
+            reasoning = "No repeal found - law likely still applicable";
+          }
+
+          return {
+            act: lawName,
+            section: section,
+            status,
+            reasoning,
+            lastUpdated,
+            relatedCases: relevantCases.map(c => ({
+              title: c.title,
+              date: c.docdisplaydate,
+              court: c.court,
+              url: c.url
+            })),
+            confidence: searchResults.total > 0 ? 0.75 : 0.5
+          };
+        } catch (error: any) {
+          // Fallback for API errors
+          return {
+            act: lawName,
+            section: section || "",
+            status: "UNKNOWN",
+            reasoning: "Unable to verify status - recommend checking official legal databases",
+            lastUpdated: new Date().toISOString().split('T')[0],
+            relatedCases: [],
+            confidence: 0,
+            error: error.message
+          };
+        }
+      })
+    );
+
+    return statusChecks;
   }
 
   private getFallbackCounterArguments(input: CounterArgumentGenerationInput): CounterArgumentGenerationResult {
