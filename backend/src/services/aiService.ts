@@ -481,6 +481,86 @@ Rules:
     return Math.min(Math.round(score * 100) / 100, 0.95);
   }
 
+  /**
+   * Detect document type from content
+   */
+  detectDocumentType(documentText: string): {
+    type: string;
+    confidence: number;
+    indicators: string[];
+  } {
+    const text = documentText.toLowerCase();
+    const indicators: string[] = [];
+    let type = "Legal Document";
+    let confidence = 0.5;
+
+    // Check for judgment indicators
+    if (text.includes("judgment") || text.includes("decree") || text.includes("order dated")) {
+      indicators.push("Contains 'judgment' or 'decree' keyword");
+      if ((text.match(/hon'ble|honourable|justice/gi) || []).length > 2) {
+        indicators.push("Multiple references to judges/justices");
+      }
+      if ((text.match(/herein|whereas|respectfully submitted|the court/gi) || []).length > 5) {
+        indicators.push("Formal judgment language pattern");
+      }
+      type = "Judgment/Order";
+      confidence = 0.75;
+    }
+    
+    // Check for petition indicators
+    else if (text.includes("petition") || text.includes("writ petition") || text.includes("prayer")) {
+      indicators.push("Contains petition indicators");
+      if ((text.match(/pray|respectfully|humbly submitted/gi) || []).length > 2) {
+        indicators.push("Petition language detected");
+      }
+      type = "Petition/Application";
+      confidence = 0.70;
+    }
+    
+    // Check for contract indicators
+    else if (text.includes("agreement") || text.includes("contract") || text.includes("whereas") || text.includes("hereinafter")) {
+      indicators.push("Contract/Agreement keywords found");
+      if ((text.match(/hereby|acknowledge|agree|consideration/gi) || []).length > 3) {
+        indicators.push("Contract terminology detected");
+      }
+      type = "Contract/Agreement";
+      confidence = 0.68;
+    }
+    
+    // Check for statute indicators
+    else if (text.includes("act") && (text.includes("section") || text.includes("§") || text.includes("clause")) && (text.includes("parliament") || text.includes("legislature"))) {
+      indicators.push("Legislation keywords found");
+      if ((text.match(/chapter|part|schedule|section \d+/gi) || []).length > 3) {
+        indicators.push("Statutory structure detected");
+      }
+      type = "Statute/Legislation";
+      confidence = 0.72;
+    }
+    
+    // Check for memorandum/letter indicators
+    else if (text.includes("memorandum") || (text.includes("dear") && text.includes("regards"))) {
+      indicators.push("Memorandum/Letter format");
+      type = "Memorandum/Correspondence";
+      confidence = 0.65;
+    }
+    
+    // Check for affidavit indicators
+    else if (text.includes("affidavit") || text.includes("solemnly") || text.includes("state on oath")) {
+      indicators.push("Affidavit indicators found");
+      type = "Affidavit";
+      confidence = 0.70;
+    }
+    
+    // Generic legal document
+    else if ((text.match(/section|act|statute|clause|provision|paragraph/gi) || []).length > 5) {
+      indicators.push("Generic legal document - contains multiple legal references");
+      type = "Legal Document (Type Unspecified)";
+      confidence = 0.55;
+    }
+
+    return { type, confidence, indicators };
+  }
+
   private getFallbackCounterArguments(input: CounterArgumentGenerationInput): CounterArgumentGenerationResult {
     return {
       summary: "Input-only counter-argument strategy generated. Validate all statutory references and citations before use in pleadings.",

@@ -115,6 +115,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Document appears to be empty or unreadable" });
       }
 
+      // Detect document type
+      const documentTypeInfo = aiService.detectDocumentType(documentText);
+      
       // Use RAG for comprehensive analysis
       const ragAnalysis = await ragService.analyzeJudgmentWithRAG(documentText);
       
@@ -124,13 +127,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Search for relevant precedents using India Kanoon
       const precedents = await indiaKanoonService.findRelevantPrecedents(documentText);
 
+      // Create enhanced summary with document type information
+      const enhancedSummary = `[Document Type: ${documentTypeInfo.type} (${Math.round(documentTypeInfo.confidence * 100)}% confidence)]\n\n${ragAnalysis.summary}${documentTypeInfo.type !== "Judgment/Order" ? `\n\n⚠️ NOTE: This document is classified as "${documentTypeInfo.type}" rather than a judgment. Analysis has been adapted accordingly. Key indicators: ${documentTypeInfo.indicators.join("; ")}` : ""}`;
+
       // Combine results into comprehensive analysis
       const analysis = {
         id: `analysis-${Date.now()}`,
         documentName,
         uploadDate: new Date().toISOString(),
+        documentType: documentTypeInfo.type,
+        documentTypeConfidence: documentTypeInfo.confidence,
+        documentTypeIndicators: documentTypeInfo.indicators,
         analysis: {
-          summary: ragAnalysis.summary,
+          summary: enhancedSummary,
           keyPoints: ragAnalysis.keyPoints,
           lawsApplied: ragAnalysis.lawsApplied.map(law => ({
             provision: law.provision,
@@ -654,6 +663,256 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Get user error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Case Prediction endpoint with AI analysis and risk assessment
+  app.post("/api/predict-case", async (req, res) => {
+    try {
+      const { caseDescription, caseType, jurisdiction } = req.body;
+      
+      if (!caseDescription || !caseDescription.trim()) {
+        return res.status(400).json({ error: "Case description is required" });
+      }
+
+      // Retrieve relevant precedents for context
+      let precedents: any[] = [];
+      try {
+        precedents = await indiaKanoonService.findRelevantPrecedents(caseDescription, 5);
+      } catch (error) {
+        console.warn("Precedent retrieval failed for case prediction:", error);
+      }
+
+      // Retrieve relevant laws from RAG
+      let laws: any[] = [];
+      try {
+        laws = await ragService.searchRelevantLaws(caseDescription, 8);
+      } catch (error) {
+        console.warn("Law retrieval failed for case prediction:", error);
+      }
+
+      // Generate comprehensive case prediction using AI
+      const prompt = `You are an expert legal analyst specialized in case outcome prediction for Indian courts. Analyze this case and provide a structured prediction report.
+
+Case Type: ${caseType || "General"}
+Jurisdiction: ${jurisdiction || "India"}
+
+Case Description:
+${caseDescription}
+
+Relevant Laws: ${laws.length > 0 ? laws.map(l => `${l.metadata?.act || 'Statute'} ${l.section || ''}`).join('; ') : 'None found'}
+Relevant Precedents: ${precedents.length > 0 ? precedents.map(p => `${p.title}`).slice(0, 3).join('; ') : 'None found'}
+
+Provide a detailed prediction in this exact JSON format:
+{
+  "successProbability": 0.65,
+  "successReasoning": "Clear explanation of probability",
+  "overallAssessment": "Comprehensive case assessment",
+  "courtAnalysis": {
+    "judicialPatterns": "Analysis of patterns",
+    "precedentAlignment": "Precedent analysis",
+    "caseStrength": 0.65
+  },
+  "evidenceAssessment": [
+    {"type": "Evidence type", "analysis": "Analysis", "strength": 0.7}
+  ],
+  "strategicRecommendations": [
+    {"action": "Strategy", "reasoning": "Why recommended"}
+  ],
+  "riskAssessment": {
+    "financialRisk": 0.4,
+    "financialRiskDetails": "Explanation",
+    "proceduralRisk": 0.3,
+    "proceduralRiskDetails": "Explanation",
+    "litigationRisk": 0.4,
+    "litigationRiskDetails": "Explanation"
+  },
+  "precedentAnalysis": [
+    {"caseTitle": "Case", "citation": "Citation", "applicability": "How it applies", "relevanceScore": 75}
+  ],
+  "keyStrengths": ["Strength 1", "Strength 2"],
+  "keyWeaknesses": ["Weakness 1", "Weakness 2"],
+  "estimatedDuration": "6-12 months",
+  "estimatedCosts": "₹2-5 lakhs",
+  "confidence": 0.7
+}`;
+
+      try {
+        // Use aiService's Gemini instance method
+        const geminiResponse = await fetch(
+          'https://generativelanguage.googleapis.com/v1alpha/models/gemini-3.1-flash-lite-preview:generateContent',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GEMINI_API_KEY || process.env.VITE_GOOGLE_AI_API_KEY || '',
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 1.0,
+                maxOutputTokens: 2500,
+              },
+            }),
+          }
+        );
+
+        if (!geminiResponse.ok) {
+          const errorText = await geminiResponse.text();
+          console.error('Gemini API Error:', geminiResponse.status, errorText);
+          throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`);
+        }
+
+        const data = await geminiResponse.json();
+        const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        if (!responseText) {
+          throw new Error('No response from Gemini API');
+        }
+
+        // Parse JSON response
+        let prediction;
+        try {
+          prediction = JSON.parse(responseText);
+        } catch (e) {
+          // Try to extract JSON if wrapped in text
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) {
+            throw new Error('Could not parse AI response as JSON');
+          }
+          prediction = JSON.parse(jsonMatch[0]);
+        }
+
+        // Ensure all required fields exist
+        prediction = {
+          id: `predict-${Date.now()}`,
+          successProbability: Math.min(1, Math.max(0, prediction.successProbability || 0.5)),
+          successReasoning: prediction.successReasoning || "Case analysis under review",
+          overallAssessment: prediction.overallAssessment || "Comprehensive case analysis completed",
+          courtAnalysis: {
+            judicialPatterns: prediction.courtAnalysis?.judicialPatterns || "Judicial patterns analyzed",
+            precedentAlignment: prediction.courtAnalysis?.precedentAlignment || "Precedent alignment reviewed",
+            caseStrength: Math.min(1, Math.max(0, prediction.courtAnalysis?.caseStrength || 0.5)),
+          },
+          evidenceAssessment: (prediction.evidenceAssessment || []).map((e: any) => ({
+            type: e.type || "Evidence",
+            analysis: e.analysis || "Assessment pending",
+            strength: Math.min(1, Math.max(0, e.strength || 0.5)),
+          })),
+          strategicRecommendations: (prediction.strategicRecommendations || []).map((r: any) => ({
+            action: r.action || "Strategy",
+            reasoning: r.reasoning || "Analysis in progress",
+          })),
+          riskAssessment: {
+            financialRisk: Math.min(1, Math.max(0, prediction.riskAssessment?.financialRisk || 0.4)),
+            financialRiskDetails: prediction.riskAssessment?.financialRiskDetails || "Financial risks assessed",
+            proceduralRisk: Math.min(1, Math.max(0, prediction.riskAssessment?.proceduralRisk || 0.3)),
+            proceduralRiskDetails: prediction.riskAssessment?.proceduralRiskDetails || "Procedural risks evaluated",
+            litigationRisk: Math.min(1, Math.max(0, prediction.riskAssessment?.litigationRisk || 0.4)),
+            litigationRiskDetails: prediction.riskAssessment?.litigationRiskDetails || "Litigation risks considered",
+          },
+          precedentAnalysis: (prediction.precedentAnalysis || []).slice(0, 10).map((p: any) => ({
+            caseTitle: p.caseTitle || "Relevant precedent",
+            citation: p.citation || "Citation",
+            applicability: p.applicability || "Applicable to case",
+            relevanceScore: Math.min(100, Math.max(0, p.relevanceScore || 75)),
+          })),
+          keyStrengths: (prediction.keyStrengths || []).filter((s: any) => typeof s === 'string'),
+          keyWeaknesses: (prediction.keyWeaknesses || []).filter((w: any) => typeof w === 'string'),
+          estimatedDuration: prediction.estimatedDuration || "6-12 months",
+          estimatedCosts: prediction.estimatedCosts || "₹2-5 lakhs",
+          confidence: Math.min(1, Math.max(0, prediction.confidence || 0.7)),
+          retrievalUsed: {
+            lawsFound: laws.length,
+            precedentsFound: precedents.length,
+          },
+        };
+
+        res.json(prediction);
+      } catch (apiError: any) {
+        console.error("Case Prediction API Error Details:", {
+          message: apiError.message,
+          stack: apiError.stack,
+          hasGeminiKey: !!process.env.GEMINI_API_KEY,
+          hasViteKey: !!process.env.VITE_GOOGLE_AI_API_KEY,
+        });
+        
+        // Return fallback prediction
+        return res.json({
+          id: `predict-${Date.now()}`,
+          successProbability: 0.5,
+          successReasoning: "AI analysis service is temporarily unavailable. Using fallback analysis.",
+          overallAssessment: "The case presents a balanced profile requiring detailed expert analysis. Both parties have arguable positions based on available information.",
+          courtAnalysis: {
+            judicialPatterns: "Similar cases show mixed outcomes depending on factual circumstances and precedent application",
+            precedentAlignment: `${precedents.length} precedents available for alignment analysis`,
+            caseStrength: 0.5,
+          },
+          evidenceAssessment: [
+            {
+              type: "Documentary Evidence",
+              analysis: "Review of underlying contracts and correspondence required",
+              strength: 0.5,
+            },
+            {
+              type: "Legal Arguments",
+              analysis: `${laws.length} relevant legal provisions available for statutory analysis`,
+              strength: 0.5,
+            },
+          ],
+          strategicRecommendations: [
+            {
+              action: "Consult with experienced litigation counsel",
+              reasoning: "Complex cases benefit from expert guidance in strategy development",
+            },
+            {
+              action: "Prepare comprehensive evidence package",
+              reasoning: "Strong documentary support is critical for case success",
+            },
+            {
+              action: "Research applicable precedents in depth",
+              reasoning: `${precedents.length} relevant precedents identified for detailed study`,
+            },
+          ],
+          riskAssessment: {
+            financialRisk: 0.45,
+            financialRiskDetails: "Financial exposure depends on claim quantum and likelihood of adverse judgment",
+            proceduralRisk: 0.35,
+            proceduralRiskDetails: "Procedural compliance with court rules and statutory requirements is essential",
+            litigationRisk: 0.50,
+            litigationRiskDetails: "Inherent uncertainty in judicial decision-making creates litigation risk",
+          },
+          precedentAnalysis: precedents.slice(0, 3).map(p => ({
+            caseTitle: p.title || "Relevant precedent",
+            citation: p.tid ? `IK-${p.tid}` : "Citation unavailable",
+            applicability: "Similar legal principles may be applicable to current dispute",
+            relevanceScore: 65,
+          })),
+          keyStrengths: [
+            "Case details provided for analysis",
+            laws.length > 0 ? `${laws.length} relevant legal provisions available` : "Legal framework exists",
+          ].filter(s => s),
+          keyWeaknesses: [
+            "AI analysis service temporarily offline",
+            "Requires manual expert review for detailed prediction",
+          ],
+          estimatedDuration: "6-18 months depending on complexity and appeals",
+          estimatedCosts: "₹2-10 lakhs depending on representation and court fees",
+          confidence: 0.4,
+          retrievalUsed: {
+            lawsFound: laws.length,
+            precedentsFound: precedents.length,
+          },
+          _debug: process.env.NODE_ENV === 'development' ? {
+            apiError: apiError.message,
+            retrievedLaws: laws.length,
+            retrievedPrecedents: precedents.length,
+          } : undefined,
+        });
+      }
+    } catch (error: any) {
+      console.error("Case prediction error:", error);
+      res.status(500).json({ error: error.message || "Failed to predict case outcome" });
     }
   });
 

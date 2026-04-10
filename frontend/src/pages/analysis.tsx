@@ -425,7 +425,27 @@ export default function Analysis() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-relaxed">{analysis.analysis.summary}</p>
+              <div className="space-y-3">
+                {(analysis as any).documentType && (
+                  <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-blue-50 border border-blue-100">
+                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                    <div className="text-sm">
+                      <p className="font-medium text-blue-900">
+                        Document Type: <span className="font-semibold">{(analysis as any).documentType}</span>
+                      </p>
+                      <p className="text-xs text-blue-700 mt-1">
+                        Detection confidence: {Math.round(((analysis as any).documentTypeConfidence || 0) * 100)}%
+                      </p>
+                      {((analysis as any).documentTypeIndicators || []).length > 0 && (
+                        <p className="text-xs text-blue-700 mt-1">
+                          Indicators: {((analysis as any).documentTypeIndicators || []).join("; ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <p className="text-sm leading-relaxed">{analysis.analysis.summary}</p>
+              </div>
             </CardContent>
           </Card>
 

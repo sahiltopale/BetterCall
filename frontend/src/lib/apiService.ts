@@ -114,6 +114,52 @@ export interface CounterArgumentResult {
   };
 }
 
+export interface CasePredictionRequest {
+  caseDescription: string;
+  caseType: "civil" | "criminal" | "constitutional" | "commercial" | "family" | "labor" | "intellectual-property" | "administrative";
+  jurisdiction?: string;
+}
+
+export interface CasePredictionResult {
+  id: string;
+  successProbability: number;
+  successReasoning: string;
+  overallAssessment: string;
+  courtAnalysis: {
+    judicialPatterns: string;
+    precedentAlignment: string;
+    caseStrength: number;
+  };
+  evidenceAssessment: Array<{
+    type: string;
+    analysis: string;
+    strength: number;
+  }>;
+  strategicRecommendations: Array<{
+    action: string;
+    reasoning: string;
+  }>;
+  riskAssessment: {
+    financialRisk: number;
+    financialRiskDetails: string;
+    proceduralRisk: number;
+    proceduralRiskDetails: string;
+    litigationRisk: number;
+    litigationRiskDetails: string;
+  };
+  precedentAnalysis: Array<{
+    caseTitle: string;
+    citation: string;
+    applicability: string;
+    relevanceScore: number;
+  }>;
+  keyStrengths: string[];
+  keyWeaknesses: string[];
+  estimatedDuration: string;
+  estimatedCosts: string;
+  confidence: number;
+}
+
 class ApiService {
   private baseURL: string;
 
@@ -315,6 +361,16 @@ class ApiService {
    */
   async getIndiaKanoonCase(caseId: string): Promise<any> {
     return this.makeRequest(`/api/india-kanoon/case/${caseId}`);
+  }
+
+  /**
+   * Predict case outcome with AI analysis
+   */
+  async predictCaseOutcome(payload: CasePredictionRequest): Promise<CasePredictionResult> {
+    return this.makeRequest('/api/predict-case', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   /**

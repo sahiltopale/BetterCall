@@ -16,6 +16,7 @@ import Dashboard from "@/pages/dashboard";
 import Search from "@/pages/search";
 import Analysis from "@/pages/analysis";
 import CounterArgument from "@/pages/counter-argument";
+import CasePredict from "@/pages/case-predict";
 import LegalDraft from "@/pages/legal-draft";
 import VectorSearch from "@/pages/vector-search";
 import CaseDetails from "@/pages/case-details";
@@ -84,6 +85,11 @@ function Router() {
       <Route path="/counter-argument">
         <AppLayout>
           <ProtectedRoute component={CounterArgument} />
+        </AppLayout>
+      </Route>
+      <Route path="/case-predict">
+        <AppLayout>
+          <ProtectedRoute component={CasePredict} />
         </AppLayout>
       </Route>
       <Route path="/legal-draft">

@@ -7,6 +7,7 @@ import {
   Settings,
   PenTool,
   ShieldAlert,
+  TrendingUp,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -45,6 +46,11 @@ const mainItems = [
     title: "Counter Argument",
     url: "/counter-argument",
     icon: ShieldAlert,
+  },
+  {
+    title: "Case Predict",
+    url: "/case-predict",
+    icon: TrendingUp,
   },
   {
     title: "Legal Draft",
