@@ -14,6 +14,34 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface CounterAuthority {
+  title: string;
+  citation?: string;
+  source: string;
+  proposition: string;
+  relevance: string;
+  url?: string;
+}
+
+export interface CounterArgumentGenerationInput {
+  facts: string;
+  opponentPosition: string;
+  yourSide: string;
+  stage: string;
+  jurisdiction?: string;
+  court?: string;
+  authorities?: CounterAuthority[];
+}
+
+export interface CounterArgumentGenerationResult {
+  summary: string;
+  opposingViewpoints: string[];
+  rebuttals: string[];
+  proceduralDefenses: string[];
+  strategyChecklist: string[];
+  confidence: number;
+}
+
 export class AIService {
   private gemini: GoogleGenerativeAI | null = null;
 
@@ -339,6 +367,92 @@ Provide a structured outline as JSON array:
     }
   }
 
+  async generateCounterArguments(input: CounterArgumentGenerationInput): Promise<CounterArgumentGenerationResult> {
+    try {
+      if (!this.gemini) {
+        return this.getFallbackCounterArguments(input);
+      }
+
+      const authorityBlock = (input.authorities || [])
+        .slice(0, 12)
+        .map((a, idx) => {
+          const citationPart = a.citation ? ` [${a.citation}]` : "";
+          const urlPart = a.url ? ` (${a.url})` : "";
+          return `${idx + 1}. ${a.title}${citationPart} | ${a.source} | ${a.proposition} | ${a.relevance}${urlPart}`;
+        })
+        .join("\n");
+
+      const prompt = `You are senior Indian litigation counsel. Generate a focused counter-argument memo from the client's input.
+
+CLIENT FACTS:
+${input.facts}
+
+OPPONENT POSITION:
+${input.opponentPosition}
+
+LITIGATION CONTEXT:
+- Our side: ${input.yourSide}
+- Stage: ${input.stage}
+- Jurisdiction: ${input.jurisdiction || "Not specified"}
+- Court: ${input.court || "Not specified"}
+
+RETRIEVED AUTHORITIES (may be empty):
+${authorityBlock || "None provided. Build from facts only and mark where verification is needed."}
+
+Return STRICT JSON with this shape only:
+{
+  "summary": "4-6 sentence strategic summary",
+  "opposingViewpoints": [
+    "Strongest opponent contention in legal terms",
+    "... at least 4 items"
+  ],
+  "rebuttals": [
+    "Point-by-point rebuttal tied to facts/statute/precedent",
+    "... at least 5 items"
+  ],
+  "proceduralDefenses": [
+    "Maintainability / limitation / jurisdiction / burden / admissibility defenses",
+    "... at least 4 items"
+  ],
+  "strategyChecklist": [
+    "Actionable hearing preparation checklist with sequence",
+    "... at least 6 items"
+  ]
+}
+
+Rules:
+- Use concise legal drafting style.
+- Prefer issue framing in 'Whether...' format where relevant.
+- If authority support is missing, state 'verify citation before filing' inside the relevant rebuttal.
+- Do not include markdown or any text outside JSON.`;
+
+      const model = this.gemini.getGenerativeModel({
+        model: "gemini-3.1-flash-lite-preview",
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+          maxOutputTokens: 4096,
+        }
+      });
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const parsed = JSON.parse(response.text() || "{}");
+
+      return {
+        summary: parsed.summary || "Counter-argument analysis generated from provided facts.",
+        opposingViewpoints: Array.isArray(parsed.opposingViewpoints) ? parsed.opposingViewpoints : [],
+        rebuttals: Array.isArray(parsed.rebuttals) ? parsed.rebuttals : [],
+        proceduralDefenses: Array.isArray(parsed.proceduralDefenses) ? parsed.proceduralDefenses : [],
+        strategyChecklist: Array.isArray(parsed.strategyChecklist) ? parsed.strategyChecklist : [],
+        confidence: this.calculateCounterConfidence(input, parsed),
+      };
+    } catch (error) {
+      console.error("Counter argument generation error:", error);
+      return this.getFallbackCounterArguments(input);
+    }
+  }
+
   /**
    * Calculate confidence score for analysis
    */
@@ -356,6 +470,49 @@ Provide a structured outline as JSON array:
     if (analysis.precedentSuggestions?.length >= 2) score += 0.1;
     
     return Math.min(Math.round(score * 100) / 100, 0.95);
+  }
+
+  private calculateCounterConfidence(input: CounterArgumentGenerationInput, output: any): number {
+    let score = 0.55;
+    if (input.facts.length > 500) score += 0.1;
+    if ((input.authorities || []).length >= 3) score += 0.15;
+    if (Array.isArray(output?.rebuttals) && output.rebuttals.length >= 4) score += 0.1;
+    if (Array.isArray(output?.proceduralDefenses) && output.proceduralDefenses.length >= 3) score += 0.1;
+    return Math.min(Math.round(score * 100) / 100, 0.95);
+  }
+
+  private getFallbackCounterArguments(input: CounterArgumentGenerationInput): CounterArgumentGenerationResult {
+    return {
+      summary: "Input-only counter-argument strategy generated. Validate all statutory references and citations before use in pleadings.",
+      opposingViewpoints: [
+        "Whether the claimant has established a complete cause of action on pleaded facts.",
+        "Whether documentary evidence relied upon is admissible and sufficiently proved.",
+        "Whether jurisdictional and maintainability thresholds are satisfied.",
+        "Whether interim or final relief can be granted without irreparable harm analysis."
+      ],
+      rebuttals: [
+        "Deny material averments not supported by primary documents and demand strict proof.",
+        "Challenge legal inference where statutory ingredients are not specifically pleaded.",
+        "Distinguish cited precedents on facts, forum, and procedural posture; verify citation before filing.",
+        "Assert that equitable relief is unavailable due to delay, conduct, or alternate remedy.",
+        "Insist on burden-of-proof compliance before any adverse inference is drawn."
+      ],
+      proceduralDefenses: [
+        "Maintainability objection at threshold hearing.",
+        "Limitation and delay/laches objection based on chronology.",
+        "Jurisdiction and forum competence objection.",
+        "Non-joinder/mis-joinder and defective pleadings objection."
+      ],
+      strategyChecklist: [
+        "Create fact chronology with source documents and dates.",
+        "Map each opponent issue to statutory ingredients and gaps.",
+        "Prepare preliminary objections before merits arguments.",
+        "Prepare short note distinguishing opponent authorities.",
+        "Draft hearing note with primary and fallback submissions.",
+        "Keep citation verification sheet before filing or argument."
+      ],
+      confidence: (input.authorities || []).length > 0 ? 0.72 : 0.62,
+    };
   }
 
   /**

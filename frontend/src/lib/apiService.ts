@@ -79,6 +79,41 @@ export interface VectorSearchResult {
   confidence: number;
 }
 
+export interface CounterArgumentRequest {
+  facts: string;
+  opponentPosition: string;
+  yourSide?: "petitioner" | "respondent" | "appellant" | "defendant" | "complainant";
+  stage?: "notice" | "interim" | "trial" | "appeal" | "revision" | "writ";
+  jurisdiction?: string;
+  court?: string;
+  enableRetrieval?: boolean;
+  maxAuthorities?: number;
+}
+
+export interface CounterArgumentResult {
+  id: string;
+  generatedAt: string;
+  mode: "input-only" | "retrieval-enriched";
+  summary: string;
+  opposingViewpoints: string[];
+  rebuttals: string[];
+  proceduralDefenses: string[];
+  authorities: Array<{
+    title: string;
+    citation?: string;
+    source: string;
+    proposition: string;
+    relevance: string;
+    url?: string;
+  }>;
+  strategyChecklist: string[];
+  confidence: number;
+  retrievalUsed: {
+    ragMatches: number;
+    precedentMatches: number;
+  };
+}
+
 class ApiService {
   private baseURL: string;
 
@@ -227,6 +262,16 @@ class ApiService {
     return this.makeRequest('/api/ai/extract-entities', {
       method: 'POST',
       body: JSON.stringify({ text }),
+    });
+  }
+
+  /**
+   * Generate counter arguments from user facts with optional retrieval enrichment
+   */
+  async generateCounterArguments(payload: CounterArgumentRequest): Promise<CounterArgumentResult> {
+    return this.makeRequest('/api/counter-arguments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 

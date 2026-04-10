@@ -6,7 +6,9 @@ import { storage } from "./storage";
 import { ragService } from "./services/ragService";
 import { indiaKanoonService } from "./services/indiaKanoonService"; 
 import { aiService } from "./services/aiService";
-import { searchQuerySchema } from "@shared/schema";
+import sharedSchema from "../shared/schema";
+
+const { counterArgumentRequestSchema, searchQuerySchema } = sharedSchema as any;
 
 // Extend Request interface for file uploads
 interface MulterRequest extends Request {
@@ -273,6 +275,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Entity extraction error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/counter-arguments", async (req, res) => {
+    try {
+      const parsed = counterArgumentRequestSchema.safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request payload",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const input = parsed.data;
+      const maxAuthorities = input.maxAuthorities || 8;
+      const retrievalEnabled = input.enableRetrieval !== false;
+
+      let ragMatches: any[] = [];
+      let precedents: any[] = [];
+
+      if (retrievalEnabled) {
+        const retrievalQuery = `${input.facts}\nOpponent Position: ${input.opponentPosition}\nStage: ${input.stage}`;
+
+        try {
+          ragMatches = await ragService.searchRelevantLaws(retrievalQuery, maxAuthorities);
+        } catch (error) {
+          console.warn("RAG retrieval failed for counter arguments:", error);
+        }
+
+        try {
+          precedents = await indiaKanoonService.findRelevantPrecedents(retrievalQuery);
+        } catch (error) {
+          console.warn("Precedent retrieval failed for counter arguments:", error);
+        }
+      }
+
+      const authorityPool = [
+        ...ragMatches.map((law: any) => ({
+          title: law.lawName || `${law.metadata?.act || "Statute"} ${law.section || ""}`.trim(),
+          citation: law.metadata?.citation,
+          source: "RAG",
+          proposition: law.content || `${law.section || "Provision"} from ${law.metadata?.act || "relevant act"}`,
+          relevance: `Semantic relevance ${Math.round((law.relevanceScore || 0) * 100)}%`,
+          url: undefined,
+        })),
+        ...precedents.map((p: any) => ({
+          title: p.title || "Relevant precedent",
+          citation: p.tid ? `IK-${p.tid}` : undefined,
+          source: p.court || "India Kanoon",
+          proposition: p.headline || p.title || "Potentially relevant precedent",
+          relevance: `Date ${p.docdisplaydate || "Unknown"}`,
+          url: p.url,
+        })),
+      ].slice(0, maxAuthorities);
+
+      const generated = await aiService.generateCounterArguments({
+        facts: input.facts,
+        opponentPosition: input.opponentPosition,
+        yourSide: input.yourSide,
+        stage: input.stage,
+        jurisdiction: input.jurisdiction,
+        court: input.court,
+        authorities: authorityPool,
+      });
+
+      const response = {
+        id: `counter-${Date.now()}`,
+        generatedAt: new Date().toISOString(),
+        mode: authorityPool.length > 0 ? "retrieval-enriched" : "input-only",
+        summary: generated.summary,
+        opposingViewpoints: generated.opposingViewpoints,
+        rebuttals: generated.rebuttals,
+        proceduralDefenses: generated.proceduralDefenses,
+        authorities: authorityPool,
+        strategyChecklist: generated.strategyChecklist,
+        confidence: generated.confidence,
+        retrievalUsed: {
+          ragMatches: ragMatches.length,
+          precedentMatches: precedents.length,
+        },
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      console.error("Counter-argument generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate counter arguments" });
     }
   });
 

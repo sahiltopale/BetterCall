@@ -121,3 +121,45 @@ export const savedSearchSchema = z.object({
 });
 
 export type SavedSearch = z.infer<typeof savedSearchSchema>;
+
+// Counter Argument Generator schemas
+export const counterArgumentRequestSchema = z.object({
+  facts: z.string().min(20, "Facts must be at least 20 characters"),
+  opponentPosition: z.string().min(10, "Opponent position must be at least 10 characters"),
+  yourSide: z.enum(["petitioner", "respondent", "appellant", "defendant", "complainant"]).default("respondent"),
+  stage: z.enum(["notice", "interim", "trial", "appeal", "revision", "writ"]).default("trial"),
+  jurisdiction: z.string().optional(),
+  court: z.string().optional(),
+  enableRetrieval: z.boolean().default(true),
+  maxAuthorities: z.number().min(1).max(20).default(8),
+});
+
+export type CounterArgumentRequest = z.infer<typeof counterArgumentRequestSchema>;
+
+export const counterAuthoritySchema = z.object({
+  title: z.string(),
+  citation: z.string().optional(),
+  source: z.string(),
+  proposition: z.string(),
+  relevance: z.string(),
+  url: z.string().optional(),
+});
+
+export const counterArgumentResponseSchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  mode: z.enum(["input-only", "retrieval-enriched"]),
+  summary: z.string(),
+  opposingViewpoints: z.array(z.string()),
+  rebuttals: z.array(z.string()),
+  proceduralDefenses: z.array(z.string()),
+  authorities: z.array(counterAuthoritySchema),
+  strategyChecklist: z.array(z.string()),
+  confidence: z.number(),
+  retrievalUsed: z.object({
+    ragMatches: z.number(),
+    precedentMatches: z.number(),
+  }),
+});
+
+export type CounterArgumentResponse = z.infer<typeof counterArgumentResponseSchema>;

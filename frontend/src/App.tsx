@@ -15,6 +15,7 @@ import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import Search from "@/pages/search";
 import Analysis from "@/pages/analysis";
+import CounterArgument from "@/pages/counter-argument";
 import LegalDraft from "@/pages/legal-draft";
 import VectorSearch from "@/pages/vector-search";
 import CaseDetails from "@/pages/case-details";
@@ -78,6 +79,11 @@ function Router() {
       <Route path="/analysis">
         <AppLayout>
           <ProtectedRoute component={Analysis} />
+        </AppLayout>
+      </Route>
+      <Route path="/counter-argument">
+        <AppLayout>
+          <ProtectedRoute component={CounterArgument} />
         </AppLayout>
       </Route>
       <Route path="/legal-draft">

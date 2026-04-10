@@ -6,6 +6,7 @@ import {
   BookOpen,
   Settings,
   PenTool,
+  ShieldAlert,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -31,7 +32,7 @@ const mainItems = [
     icon: Home,
   },
   {
-    title: "Maharashtra Acts",
+    title: "Search",
     url: "/search",
     icon: Search,
   },
@@ -39,6 +40,11 @@ const mainItems = [
     title: "Judgment Analysis",
     url: "/analysis",
     icon: FileText,
+  },
+  {
+    title: "Counter Argument",
+    url: "/counter-argument",
+    icon: ShieldAlert,
   },
   {
     title: "Legal Draft",
