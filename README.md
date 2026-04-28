@@ -2,7 +2,7 @@ BetterCall – AI-Driven Legal Assistant
 
 Live URL - https://legal-lilac-sigma.vercel.app/
 
-Github Link - 
+Github Link - https://github.com/sahiltopale/BetterCall
 
 1. Overview
 
