@@ -1,4 +1,9 @@
 BetterCall – AI-Driven Legal Assistant
+
+Live URL - https://legal-lilac-sigma.vercel.app/
+
+Github Link - 
+
 1. Overview
 
 BetterCall is an AI-powered legal assistance platform designed to support legal professionals in research, case analysis, and document drafting. The system combines semantic retrieval with AI-based generation to provide accurate, context-aware, and source-grounded legal outputs.
